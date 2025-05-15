@@ -52,17 +52,14 @@ if not os.path.exists(SUBSCRIPTION_FILE):
         json.dump({"users": {}}, f)
 
 def load_subscriptions():
-    """Load subscriptions from JSON file"""
     with open(SUBSCRIPTION_FILE, "r") as f:
         return json.load(f)
 
 def save_subscriptions(data):
-    """Save subscriptions to JSON file"""
     with open(SUBSCRIPTION_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
 def is_subscribed(user_id):
-    """Check if user is subscribed"""
     if user_id == ADMIN_ID:
         return True
     
@@ -76,7 +73,6 @@ def is_subscribed(user_id):
     return expiry_date > datetime.now()
 
 def add_subscription(user_id, days=30):
-    """Add or extend user subscription"""
     subscriptions = load_subscriptions()
     expiry_date = datetime.now() + timedelta(days=days)
     
@@ -88,7 +84,6 @@ def add_subscription(user_id, days=30):
     save_subscriptions(subscriptions)
 
 def search_youtube(query, max_results=10):
-    """Search YouTube and return results"""
     base_url = "https://www.youtube.com/results?"
     params = {"search_query": query}
     url = base_url + requests.compat.urlencode(params)
@@ -118,7 +113,6 @@ def search_youtube(query, max_results=10):
     return videos
 
 def format_duration(seconds):
-    """Format seconds into HH:MM:SS"""
     minutes, seconds = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
     
@@ -127,12 +121,10 @@ def format_duration(seconds):
     return f"{minutes}:{seconds:02d}"
 
 def download_progress(stream, chunk, bytes_remaining, context, chat_id, message_id):
-    """Callback for download progress"""
     total_size = stream.filesize
     bytes_downloaded = total_size - bytes_remaining
     percentage = (bytes_downloaded / total_size) * 100
     
-    # Calculate download speed
     current_time = time.time()
     if hasattr(context, 'download_start_time'):
         elapsed_time = current_time - context.download_start_time
@@ -145,12 +137,10 @@ def download_progress(stream, chunk, bytes_remaining, context, chat_id, message_
         context.download_start_time = current_time
         speed_text = "Starting download..."
     
-    # Create progress bar
     progress_bar_length = 20
     filled_length = int(progress_bar_length * percentage // 100)
     progress_bar = '█' * filled_length + '-' * (progress_bar_length - filled_length)
     
-    # Edit message with progress
     try:
         context.bot.edit_message_text(
             chat_id=chat_id,
@@ -164,7 +154,6 @@ def download_progress(stream, chunk, bytes_remaining, context, chat_id, message_
         logger.error(f"Error updating progress: {e}")
 
 def start(update: Update, context: CallbackContext):
-    """Handle /start command"""
     user_id = update.effective_user.id
     if is_subscribed(user_id):
         update.message.reply_text(
@@ -191,7 +180,6 @@ def start(update: Update, context: CallbackContext):
         )
 
 def search(update: Update, context: CallbackContext):
-    """Handle /search command"""
     user_id = update.effective_user.id
     if not is_subscribed(user_id):
         update.message.reply_text("Please subscribe to use this feature.")
@@ -225,7 +213,6 @@ def search(update: Update, context: CallbackContext):
     )
 
 def handle_video_selection(update: Update, context: CallbackContext):
-    """Handle video selection from search results"""
     query = update.callback_query
     query.answer()
     
@@ -238,14 +225,11 @@ def handle_video_selection(update: Update, context: CallbackContext):
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
         
-        # Get available streams
         streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
         audio_streams = yt.streams.filter(only_audio=True, file_extension='mp4').order_by('abr').desc()
         
-        # Create quality buttons
         keyboard = []
         
-        # Video options
         video_options = []
         for stream in streams:
             if stream.resolution not in [s.resolution for s in video_options]:
@@ -259,7 +243,6 @@ def handle_video_selection(update: Update, context: CallbackContext):
                 )
             ])
         
-        # Audio options
         audio_options = []
         for stream in audio_streams:
             if stream.abr not in [s.abr for s in audio_options]:
@@ -273,7 +256,6 @@ def handle_video_selection(update: Update, context: CallbackContext):
                 )
             ])
         
-        # Add playlist option if available
         if yt.vid_info.get('playlist'):
             keyboard.append([
                 InlineKeyboardButton(
@@ -292,10 +274,8 @@ def handle_video_selection(update: Update, context: CallbackContext):
         )
     except Exception as e:
         query.edit_message_text(f"❌ Error: {str(e)}")
-        logger.error(f"Error in handle_video_selection: {e}")
 
 def handle_download(update: Update, context: CallbackContext):
-    """Handle download requests"""
     query = update.callback_query
     query.answer()
     
@@ -319,7 +299,6 @@ def handle_download(update: Update, context: CallbackContext):
         
         stream = yt.streams.get_by_itag(itag)
         
-        # Send initial download message
         context.bot.edit_message_text(
             chat_id=query.message.chat_id,
             message_id=query.message.message_id,
@@ -329,15 +308,12 @@ def handle_download(update: Update, context: CallbackContext):
                  f"Starting download..."
         )
         
-        # Start download in a separate thread
         def download_and_send():
             try:
-                # Start download
                 buffer = BytesIO()
                 stream.stream_to_buffer(buffer)
                 buffer.seek(0)
                 
-                # Send file
                 if download_type == "video":
                     context.bot.send_video(
                         chat_id=query.message.chat_id,
@@ -357,7 +333,6 @@ def handle_download(update: Update, context: CallbackContext):
                         timeout=300
                     )
                 
-                # Delete progress message
                 context.bot.delete_message(
                     chat_id=query.message.chat_id,
                     message_id=query.message.message_id
@@ -368,15 +343,12 @@ def handle_download(update: Update, context: CallbackContext):
                     message_id=query.message.message_id,
                     text=f"❌ Error downloading video: {str(e)}"
                 )
-                logger.error(f"Download error: {e}")
         
         Thread(target=download_and_send).start()
     except Exception as e:
         query.edit_message_text(f"❌ Error: {str(e)}")
-        logger.error(f"Error in handle_download: {e}")
 
 def playlist(update: Update, context: CallbackContext):
-    """Handle /playlist command"""
     user_id = update.effective_user.id
     if not is_subscribed(user_id):
         update.message.reply_text("Please subscribe to use this feature.")
@@ -403,10 +375,8 @@ def playlist(update: Update, context: CallbackContext):
         update.message.reply_text("Select download option:", reply_markup=reply_markup)
     except Exception as e:
         update.message.reply_text(f"Error: {str(e)}")
-        logger.error(f"Playlist error: {e}")
 
 def handle_playlist_download(update: Update, context: CallbackContext):
-    """Handle playlist download requests"""
     query = update.callback_query
     query.answer()
     
@@ -416,7 +386,7 @@ def handle_playlist_download(update: Update, context: CallbackContext):
         return
     
     data = query.data.split("_")
-    download_type = data[2] if data[1] == "playlist" else "video"  # Handle both cases
+    download_type = data[2] if data[1] == "playlist" else "video"
     playlist_id = data[3]
     
     try:
@@ -425,7 +395,6 @@ def handle_playlist_download(update: Update, context: CallbackContext):
         
         query.edit_message_text(f"⏳ Preparing to download playlist: {pl.title}\n\nTotal videos: {total_videos}\n\nStarting download...")
         
-        # Start download in a separate thread
         def download_playlist():
             try:
                 success_count = 0
@@ -438,12 +407,10 @@ def handle_playlist_download(update: Update, context: CallbackContext):
                         else:
                             stream = yt.streams.get_highest_resolution()
                         
-                        # Download to buffer
                         buffer = BytesIO()
                         stream.stream_to_buffer(buffer)
                         buffer.seek(0)
                         
-                        # Send file
                         if download_type == "audio":
                             context.bot.send_audio(
                                 chat_id=query.message.chat_id,
@@ -465,15 +432,12 @@ def handle_playlist_download(update: Update, context: CallbackContext):
                             chat_id=query.message.chat_id,
                             text=f"❌ Failed to download video {i}: {str(e)}"
                         )
-                        logger.error(f"Playlist item error: {e}")
                 
-                # Send completion message
                 context.bot.send_message(
                     chat_id=query.message.chat_id,
                     text=f"✅ Playlist download complete!\n\nSuccessfully downloaded {success_count}/{total_videos} videos."
                 )
                 
-                # Delete progress message
                 context.bot.delete_message(
                     chat_id=query.message.chat_id,
                     message_id=query.message.message_id
@@ -484,15 +448,12 @@ def handle_playlist_download(update: Update, context: CallbackContext):
                     message_id=query.message.message_id,
                     text=f"❌ Error downloading playlist: {str(e)}"
                 )
-                logger.error(f"Playlist download error: {e}")
         
         Thread(target=download_playlist).start()
     except Exception as e:
         query.edit_message_text(f"❌ Error: {str(e)}")
-        logger.error(f"Playlist init error: {e}")
 
 def handle_url(update: Update, context: CallbackContext):
-    """Handle direct YouTube URLs"""
     user_id = update.effective_user.id
     if not is_subscribed(user_id):
         update.message.reply_text("Please subscribe to use this feature.")
@@ -510,14 +471,11 @@ def handle_url(update: Update, context: CallbackContext):
         
         yt = YouTube(url)
         
-        # Get available streams
         streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
         audio_streams = yt.streams.filter(only_audio=True, file_extension='mp4').order_by('abr').desc()
         
-        # Create quality buttons
         keyboard = []
         
-        # Video options
         video_options = []
         for stream in streams:
             if stream.resolution not in [s.resolution for s in video_options]:
@@ -531,7 +489,6 @@ def handle_url(update: Update, context: CallbackContext):
                 )
             ])
         
-        # Audio options
         audio_options = []
         for stream in audio_streams:
             if stream.abr not in [s.abr for s in audio_options]:
@@ -555,10 +512,8 @@ def handle_url(update: Update, context: CallbackContext):
         )
     except Exception as e:
         update.message.reply_text(f"Error: {str(e)}")
-        logger.error(f"URL handling error: {e}")
 
 def handle_subscription(update: Update, context: CallbackContext):
-    """Handle subscription requests"""
     query = update.callback_query
     query.answer()
     
@@ -594,58 +549,9 @@ def handle_subscription(update: Update, context: CallbackContext):
         )
 
 def admin_add_sub(update: Update, context: CallbackContext):
-    """Admin command to add subscriptions"""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         update.message.reply_text("You don't have permission to use this command.")
         return
     
-    if len(context.args) < 2:
-        update.message.reply_text("Usage: /addsub USER_ID DAYS")
-        return
-    
-    try:
-        target_user_id = int(context.args[0])
-        days = int(context.args[1])
-        
-        add_subscription(target_user_id, days)
-        update.message.reply_text(f"✅ Added {days} days subscription for user {target_user_id}")
-    except Exception as e:
-        update.message.reply_text(f"Error: {str(e)}")
-        logger.error(f"Admin addsub error: {e}")
-
-def error(update: Update, context: CallbackContext):
-    """Log errors"""
-    logger.error(f"Update {update} caused error {context.error}")
-    if update and update.message:
-        update.message.reply_text("An error occurred. Please try again later.")
-
-def main():
-    """Start the bot"""
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    # Add handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("search", search))
-    dp.add_handler(CommandHandler("playlist", playlist))
-    dp.add_handler(CommandHandler("addsub", admin_add_sub))
-    
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_url))
-    
-    dp.add_handler(CallbackQueryHandler(handle_video_selection, pattern=r"^select_"))
-    dp.add_handler(CallbackQueryHandler(handle_download, pattern=r"^download_(video|audio)_"))
-    dp.add_handler(CallbackQueryHandler(handle_playlist_download, pattern=r"^(download_playlist|playlist)_"))
-    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^subscribe$"))
-    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^sub_\d+$"))
-    
-    dp.add_error_handler(error)
-    
-    # Start the Bot
-    updater.start_polling()
-    logger.info("Bot started and polling...")
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
-```
+    if len(context.args)
