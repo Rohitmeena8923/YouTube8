@@ -551,4 +551,101 @@ def handle_url(update: Update, context: CallbackContext):
             f"📹 {yt.title}\n"
             f"⏱ {format_duration(yt.length)}\n"
             f"👁 {yt.views:,} views",
-            rep
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        update.message.reply_text(f"Error: {str(e)}")
+        logger.error(f"URL handling error: {e}")
+
+def handle_subscription(update: Update, context: CallbackContext):
+    """Handle subscription requests"""
+    query = update.callback_query
+    query.answer()
+    
+    user_id = update.effective_user.id
+    if user_id == ADMIN_ID:
+        query.edit_message_text("You're the admin - you have full access!")
+        return
+    
+    if is_subscribed(user_id):
+        subscriptions = load_subscriptions()
+        user_data = subscriptions["users"].get(str(user_id), {})
+        expiry_date = user_data.get("expiry", "N/A")
+        
+        query.edit_message_text(f"✅ You're subscribed!\n\nExpiry date: {expiry_date}")
+    else:
+        keyboard = [
+            [InlineKeyboardButton("1 Month", callback_data="sub_1")],
+            [InlineKeyboardButton("3 Months", callback_data="sub_3")],
+            [InlineKeyboardButton("6 Months", callback_data="sub_6")],
+            [InlineKeyboardButton("1 Year", callback_data="sub_12")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        query.edit_message_text(
+            "💰 Subscription Plans:\n\n"
+            "1 Month - $5.00\n"
+            "3 Months - $12.00 (Save $3)\n"
+            "6 Months - $20.00 (Save $10)\n"
+            "1 Year - $35.00 (Save $25)\n\n"
+            f"Payment method: {PAYMENT_INFO}\n"
+            "After payment, send the receipt to the admin.",
+            reply_markup=reply_markup
+        )
+
+def admin_add_sub(update: Update, context: CallbackContext):
+    """Admin command to add subscriptions"""
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    if len(context.args) < 2:
+        update.message.reply_text("Usage: /addsub USER_ID DAYS")
+        return
+    
+    try:
+        target_user_id = int(context.args[0])
+        days = int(context.args[1])
+        
+        add_subscription(target_user_id, days)
+        update.message.reply_text(f"✅ Added {days} days subscription for user {target_user_id}")
+    except Exception as e:
+        update.message.reply_text(f"Error: {str(e)}")
+        logger.error(f"Admin addsub error: {e}")
+
+def error(update: Update, context: CallbackContext):
+    """Log errors"""
+    logger.error(f"Update {update} caused error {context.error}")
+    if update and update.message:
+        update.message.reply_text("An error occurred. Please try again later.")
+
+def main():
+    """Start the bot"""
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    
+    # Add handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("search", search))
+    dp.add_handler(CommandHandler("playlist", playlist))
+    dp.add_handler(CommandHandler("addsub", admin_add_sub))
+    
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_url))
+    
+    dp.add_handler(CallbackQueryHandler(handle_video_selection, pattern=r"^select_"))
+    dp.add_handler(CallbackQueryHandler(handle_download, pattern=r"^download_(video|audio)_"))
+    dp.add_handler(CallbackQueryHandler(handle_playlist_download, pattern=r"^(download_playlist|playlist)_"))
+    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^subscribe$"))
+    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^sub_\d+$"))
+    
+    dp.add_error_handler(error)
+    
+    # Start the Bot
+    updater.start_polling()
+    logger.info("Bot started and polling...")
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
+```
