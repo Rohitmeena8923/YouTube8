@@ -554,4 +554,48 @@ def admin_add_sub(update: Update, context: CallbackContext):
         update.message.reply_text("You don't have permission to use this command.")
         return
     
-    if len(context.args)
+    if len(context.args) < 2:
+       update.message.reply_text("Usage: /addsub USER_ID DAYS")
+        return
+    
+    try:
+        target_user_id = int(context.args[0])
+        days = int(context.args[1])
+        
+        add_subscription(target_user_id, days)
+        update.message.reply_text(f"✅ Added {days} days subscription for user {target_user_id}")
+    except Exception as e:
+        update.message.reply_text(f"Error: {str(e)}")
+
+def error(update: Update, context: CallbackContext):
+    logger.error(f"Update {update} caused error {context.error}")
+    if update and update.message:
+        update.message.reply_text("An error occurred. Please try again later.")
+
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("search", search))
+    dp.add_handler(CommandHandler("playlist", playlist))
+    dp.add_handler(CommandHandler("addsub", admin_add_sub))
+    
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_url))
+    
+    dp.add_handler(CallbackQueryHandler(handle_video_selection, pattern=r"^select_"))
+    dp.add_handler(CallbackQueryHandler(handle_download, pattern=r"^download_(video|audio)_"))
+    dp.add_handler(CallbackQueryHandler(handle_playlist_download, pattern=r"^(download_playlist|playlist)_"))
+    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^subscribe$"))
+    dp.add_handler(CallbackQueryHandler(handle_subscription, pattern=r"^sub_\d+$"))
+    
+    dp.add_error_handler(error)
+    
+    updater.start_polling()
+    logger.info("Bot started and polling...")
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
+```
+  
